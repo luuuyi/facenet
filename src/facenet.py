@@ -40,6 +40,7 @@ import random
 import re
 from tensorflow.python.platform import gfile
 
+# triplet_loss 模块
 def triplet_loss(anchor, positive, negative, alpha):
     """Calculate the triplet loss according to the FaceNet paper
     
@@ -52,14 +53,17 @@ def triplet_loss(anchor, positive, negative, alpha):
       the triplet loss according to the FaceNet paper as a float tensor.
     """
     with tf.variable_scope('triplet_loss'):
+        # pos，neg距离
         pos_dist = tf.reduce_sum(tf.square(tf.subtract(anchor, positive)), 1)
         neg_dist = tf.reduce_sum(tf.square(tf.subtract(anchor, negative)), 1)
         
+        # 保证使得pos距离比neg距离低
         basic_loss = tf.add(tf.subtract(pos_dist,neg_dist), alpha)
         loss = tf.reduce_mean(tf.maximum(basic_loss, 0.0), 0)
       
     return loss
-  
+
+# 反卷积loss
 def decov_loss(xs):
     """Decov loss as described in https://arxiv.org/pdf/1511.06068.pdf
     'Reducing Overfitting In Deep Networks by Decorrelating Representation'
@@ -72,7 +76,8 @@ def decov_loss(xs):
     corr_diag_sqr = tf.reduce_sum(tf.square(tf.diag_part(corr)))
     loss = 0.5*(corr_frob_sqr - corr_diag_sqr)
     return loss 
-  
+
+#center loss模块
 def center_loss(features, label, alfa, nrof_classes):
     """Center loss based on the paper "A Discriminative Feature Learning Approach for Deep Face Recognition"
        (http://ydwen.github.io/papers/WenECCV16.pdf)
@@ -87,6 +92,7 @@ def center_loss(features, label, alfa, nrof_classes):
     loss = tf.reduce_mean(tf.square(features - centers_batch))
     return loss, centers
 
+# 得到img的文件路径和所属类别
 def get_image_paths_and_labels(dataset):
     image_paths_flat = []
     labels_flat = []
@@ -95,12 +101,14 @@ def get_image_paths_and_labels(dataset):
         labels_flat += [i] * len(dataset[i].image_paths)
     return image_paths_flat, labels_flat
 
+# 将label与img路径一一对应之后打乱顺序
 def shuffle_examples(image_paths, labels):
     shuffle_list = list(zip(image_paths, labels))
     random.shuffle(shuffle_list)
     image_paths_shuff, labels_shuff = zip(*shuffle_list)
     return image_paths_shuff, labels_shuff
 
+# 从磁盘上读取img文件，输入为tensor类型
 def read_images_from_disk(input_queue):
     """Consumes a single filename and label as a ' '-delimited string.
     Args:
@@ -112,11 +120,13 @@ def read_images_from_disk(input_queue):
     file_contents = tf.read_file(input_queue[0])
     example = tf.image.decode_png(file_contents, channels=3)
     return example, label
-  
+
+# 随机旋转图像
 def random_rotate_image(image):
     angle = np.random.uniform(low=-10.0, high=10.0)
     return misc.imrotate(image, angle, 'bicubic')
-  
+
+# 读取并多线程预处理img，返回img，label一一对应的batch
 def read_and_augment_data(image_list, label_list, image_size, batch_size, max_nrof_epochs, 
         random_crop, random_flip, random_rotate, nrof_preprocess_threads, shuffle=True):
     
@@ -176,6 +186,7 @@ def _add_loss_summaries(total_loss):
   
     return loss_averages_op
 
+# 训练任务
 def train(total_loss, global_step, optimizer, learning_rate, moving_average_decay, update_gradient_vars, log_histograms=True):
     # Generate moving averages of all losses and associated summaries.
     loss_averages_op = _add_loss_summaries(total_loss)
@@ -221,6 +232,7 @@ def train(total_loss, global_step, optimizer, learning_rate, moving_average_deca
   
     return train_op
 
+# 预处理
 def prewhiten(x):
     mean = np.mean(x)
     std = np.std(x)
@@ -228,6 +240,7 @@ def prewhiten(x):
     y = np.multiply(np.subtract(x, mean), 1/std_adj)
     return y  
 
+# 图像随机crop处理
 def crop(image, random_crop, image_size):
     if image.shape[1]>image_size:
         sz1 = int(image.shape[1]//2)
@@ -239,18 +252,21 @@ def crop(image, random_crop, image_size):
             (h, v) = (0,0)
         image = image[(sz1-sz2+v):(sz1+sz2+v),(sz1-sz2+h):(sz1+sz2+h),:]
     return image
-  
+
+# 图像随机flip处理
 def flip(image, random_flip):
     if random_flip and np.random.choice([True, False]):
         image = np.fliplr(image)
     return image
 
+# 将图像变成三通道
 def to_rgb(img):
     w, h = img.shape
     ret = np.empty((w, h, 3), dtype=np.uint8)
     ret[:, :, 0] = ret[:, :, 1] = ret[:, :, 2] = img
     return ret
   
+# 载入数据并做预处理
 def load_data(image_paths, do_random_crop, do_random_flip, image_size, do_prewhiten=True):
     nrof_samples = len(image_paths)
     images = np.zeros((nrof_samples, image_size, image_size, 3))
@@ -265,6 +281,7 @@ def load_data(image_paths, do_random_crop, do_random_flip, image_size, do_prewhi
         images[i,:,:,:] = img
     return images
 
+# 从labels中获取一个batch的数据
 def get_label_batch(label_data, batch_size, batch_index):
     nrof_examples = np.size(label_data, 0)
     j = batch_index*batch_size % nrof_examples
@@ -277,6 +294,7 @@ def get_label_batch(label_data, batch_size, batch_index):
     batch_int = batch.astype(np.int64)
     return batch_int
 
+# 从imgs中获取一个batch的数据
 def get_batch(image_data, batch_size, batch_index):
     nrof_examples = np.size(image_data, 0)
     j = batch_index*batch_size % nrof_examples
@@ -289,6 +307,7 @@ def get_batch(image_data, batch_size, batch_index):
     batch_float = batch.astype(np.float32)
     return batch_float
 
+# 从三元组中获取总共一个batch的数据
 def get_triplet_batch(triplets, batch_index, batch_size):
     ax, px, nx = triplets
     a = get_batch(ax, int(batch_size/3), batch_index)
@@ -297,6 +316,7 @@ def get_triplet_batch(triplets, batch_index, batch_size):
     batch = np.vstack([a, p, n])
     return batch
 
+# 从txt文件中得到lr的变化过程
 def get_learning_rate_from_file(filename, epoch):
     with open(filename, 'r') as f:
         for line in f.readlines():
@@ -322,6 +342,7 @@ class ImageClass():
     def __len__(self):
         return len(self.image_paths)
   
+# 载入数据集
 def get_dataset(paths):
     dataset = []
     for path in paths.split(':'):
