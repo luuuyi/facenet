@@ -79,6 +79,7 @@ def main(args):
             nrof_images = len(paths)
             nrof_batches_per_epoch = int(math.ceil(1.0*nrof_images / args.batch_size))
             emb_array = np.zeros((nrof_images, embedding_size))
+            # 前向计算每一条数据的特征
             for i in range(nrof_batches_per_epoch):
                 start_index = i*args.batch_size
                 end_index = min((i+1)*args.batch_size, nrof_images)
@@ -89,6 +90,9 @@ def main(args):
             
             classifier_filename_exp = os.path.expanduser(args.classifier_filename)
 
+            # 提取完特征以后分模式来进行
+            # TRAIN模式：使用svm来分类每一种类图像的特征信息
+            # TEST模式 ：读取svm模型来对输入特征进行分类
             if (args.mode=='TRAIN'):
                 # Train classifier
                 print('Training classifier')
@@ -121,7 +125,7 @@ def main(args):
                 accuracy = np.mean(np.equal(best_class_indices, labels))
                 print('Accuracy: %.3f' % accuracy)
                 
-            
+# 分割数据集，数据集每一条数据都是一个Class
 def split_dataset(dataset, min_nrof_images_per_class, nrof_train_images_per_class):
     train_set = []
     test_set = []
@@ -130,11 +134,13 @@ def split_dataset(dataset, min_nrof_images_per_class, nrof_train_images_per_clas
         # Remove classes with less than min_nrof_images_per_class
         if len(paths)>=min_nrof_images_per_class:
             np.random.shuffle(paths)
+            # Class一个成员是字符串，一个成员是list
             train_set.append(facenet.ImageClass(cls.name, paths[:nrof_train_images_per_class]))
             test_set.append(facenet.ImageClass(cls.name, paths[nrof_train_images_per_class:]))
     return train_set, test_set
 
-            
+
+# 参数解析           
 def parse_arguments(argv):
     parser = argparse.ArgumentParser()
     

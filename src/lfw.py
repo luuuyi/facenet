@@ -57,6 +57,7 @@ def get_paths(lfw_dir, pairs, file_ext):
             path1 = os.path.join(lfw_dir, pair[2], pair[2] + '_' + '%04d' % int(pair[3])+'.'+file_ext)
             issame = False
         if os.path.exists(path0) and os.path.exists(path1):    # Only add the pair if both paths exist
+            # 虽然是加上一个元组，但实际上结果还是把元组拆成了list的元素
             path_list += (path0,path1)
             issame_list.append(issame)
         else:

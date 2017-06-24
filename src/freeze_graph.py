@@ -44,6 +44,7 @@ def main(args):
             print('Metagraph file: %s' % meta_file)
             print('Checkpoint file: %s' % ckpt_file)
 
+            # 具象化用户路径
             model_dir_exp = os.path.expanduser(args.model_dir)
             saver = tf.train.import_meta_graph(os.path.join(model_dir_exp, meta_file), clear_devices=True)
             tf.get_default_session().run(tf.global_variables_initializer())
@@ -61,6 +62,9 @@ def main(args):
             f.write(output_graph_def.SerializeToString())
         print("%d ops in the final graph: %s" % (len(output_graph_def.node), args.output_file))
         
+# 冻结原来meta文件和ckpt文件组成的Graph
+# 除了白名单里面的节点，其他节点全部按原来的值替换为常量
+# 最后保留输出的节点为embeddings节点，也即是图像的128维特征
 def freeze_graph_def(sess, input_graph_def, output_node_names):
     for node in input_graph_def.node:
         if node.op == 'RefSwitch':

@@ -98,6 +98,7 @@ def get_image_paths_and_labels(dataset):
     labels_flat = []
     for i in range(len(dataset)):
         image_paths_flat += dataset[i].image_paths
+        # list的乘法操作实为翻倍操作
         labels_flat += [i] * len(dataset[i].image_paths)
     return image_paths_flat, labels_flat
 
@@ -384,6 +385,7 @@ def split_dataset(dataset, split_ratio, mode):
         raise ValueError('Invalid train/test split mode "%s"' % mode)
     return train_set, test_set
 
+# 载入模型，可以是checkpoints，也可以是protobuf
 def load_model(model):
     # Check if the model is a model directory (containing a metagraph and a checkpoint file)
     #  or if it is a protobuf file with a frozen graph
@@ -403,7 +405,8 @@ def load_model(model):
       
         saver = tf.train.import_meta_graph(os.path.join(model_exp, meta_file))
         saver.restore(tf.get_default_session(), os.path.join(model_exp, ckpt_file))
-    
+
+# 显示model路径下的文件   
 def get_model_filenames(model_dir):
     files = os.listdir(model_dir)
     meta_files = [s for s in files if s.endswith('.meta')]
@@ -423,6 +426,7 @@ def get_model_filenames(model_dir):
                 ckpt_file = step_str.groups()[0]
     return meta_file, ckpt_file
 
+# 计算ROC
 def calculate_roc(thresholds, embeddings1, embeddings2, actual_issame, nrof_folds=10):
     assert(embeddings1.shape[0] == embeddings2.shape[0])
     assert(embeddings1.shape[1] == embeddings2.shape[1])
@@ -453,6 +457,7 @@ def calculate_roc(thresholds, embeddings1, embeddings2, actual_issame, nrof_fold
         fpr = np.mean(fprs,0)
     return tpr, fpr, accuracy
 
+# 计算精准度
 def calculate_accuracy(threshold, dist, actual_issame):
     predict_issame = np.less(dist, threshold)
     tp = np.sum(np.logical_and(predict_issame, actual_issame))
@@ -466,7 +471,7 @@ def calculate_accuracy(threshold, dist, actual_issame):
     return tpr, fpr, acc
 
 
-  
+# 计算指标值，比如方差，均值
 def calculate_val(thresholds, embeddings1, embeddings2, actual_issame, far_target, nrof_folds=10):
     assert(embeddings1.shape[0] == embeddings2.shape[0])
     assert(embeddings1.shape[1] == embeddings2.shape[1])
@@ -530,6 +535,7 @@ def store_revision_info(src_path, output_dir, arg_string):
         text_file.write('git hash: %s\n--------------------\n' % git_hash)
         text_file.write('%s' % git_diff)
 
+# 列出变量，checkpoints
 def list_variables(filename):
     reader = training.NewCheckpointReader(filename)
     variable_map = reader.get_variable_to_shape_map()
