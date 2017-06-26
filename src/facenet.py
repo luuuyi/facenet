@@ -210,20 +210,24 @@ def train(total_loss, global_step, optimizer, learning_rate, moving_average_deca
         grads = opt.compute_gradients(total_loss, update_gradient_vars)
         
     # Apply gradients.
+    # 设置好优化方法，并且将优化方法对象与loss绑定，共同设置成为梯度操作对象
     apply_gradient_op = opt.apply_gradients(grads, global_step=global_step)
   
     # Add histograms for trainable variables.
+    # 保存可训练参数的快照，方便tensorboard查看
     if log_histograms:
         for var in tf.trainable_variables():
             tf.summary.histogram(var.op.name, var)
    
     # Add histograms for gradients.
+    # 保存训练中梯度参数的快照，方便tensorboard查看
     if log_histograms:
         for grad, var in grads:
             if grad is not None:
                 tf.summary.histogram(var.op.name + '/gradients', grad)
   
     # Track the moving averages of all trainable variables.
+    # 统计变量平均值，大概就是一次batch-size那么多样本进入模型训练之后的平均值
     variable_averages = tf.train.ExponentialMovingAverage(
         moving_average_decay, global_step)
     variables_averages_op = variable_averages.apply(tf.trainable_variables())

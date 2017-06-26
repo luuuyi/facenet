@@ -45,6 +45,7 @@ def main(args):
   
     network = importlib.import_module(args.model_def, 'inference')
 
+    # 创建log路径和model路径
     subdir = datetime.strftime(datetime.now(), '%Y%m%d-%H%M%S')
     log_dir = os.path.join(os.path.expanduser(args.logs_base_dir), subdir)
     if not os.path.isdir(log_dir):  # Create the log directory if it doesn't exist
@@ -58,6 +59,8 @@ def main(args):
     facenet.store_revision_info(src_path, log_dir, ' '.join(sys.argv))
 
     np.random.seed(seed=args.seed)
+    # 返回数据库数据，返回数据为自定义的Image对象
+    # 一个人脸类别联合一系列该类别图像路径为一个对象
     train_set = facenet.get_dataset(args.data_dir)
     
     print('Model directory: %s' % model_dir)
@@ -93,6 +96,7 @@ def main(args):
                                     shared_name=None, name=None)
         enqueue_op = input_queue.enqueue_many([image_paths_placeholder, labels_placeholder])
         
+        # 使用4个线程来做图像的预处理
         nrof_preprocess_threads = 4
         images_and_labels = []
         for _ in range(nrof_preprocess_threads):
@@ -100,6 +104,7 @@ def main(args):
             images = []
             for filename in tf.unstack(filenames):
                 file_contents = tf.read_file(filename)
+                # 注意图像时JPEG还是png
                 image = tf.image.decode_png(file_contents)
                 
                 if args.random_crop:
@@ -121,12 +126,16 @@ def main(args):
             allow_smaller_final_batch=True)
 
         # Build the inference graph
+        # 构建整个模型的推理结构
         prelogits, _ = network.inference(image_batch, args.keep_probability, 
             phase_train=phase_train_placeholder, bottleneck_layer_size=args.embedding_size,
             weight_decay=args.weight_decay)
         
+        # 将推理结构的输出特征扩展为一定维度的特征向量
         embeddings = tf.nn.l2_normalize(prelogits, 1, 1e-10, name='embeddings')
+
         # Split embeddings into anchor, positive and negative and calculate triplet loss
+        # 按规则选取tf队列中的三元组，进行triple-loss的计算
         anchor, positive, negative = tf.unstack(tf.reshape(embeddings, [-1,3,args.embedding_size]), 3, 1)
         triplet_loss = facenet.triplet_loss(anchor, positive, negative, args.alpha)
         
@@ -135,28 +144,36 @@ def main(args):
         tf.summary.scalar('learning_rate', learning_rate)
 
         # Calculate the total losses
+        # 给triple-loss添加正则化项
         regularization_losses = tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES)
         total_loss = tf.add_n([triplet_loss] + regularization_losses, name='total_loss')
 
         # Build a Graph that trains the model with one batch of examples and updates the model parameters
+        # 配置基于triplet-loss训练方法的facenet整体的训练流程图，并没有开始训练
         train_op = facenet.train(total_loss, global_step, args.optimizer, 
             learning_rate, args.moving_average_decay, tf.global_variables())
         
         # Create a saver
+        # 保存快照对象，只保留最新的三个状态
         saver = tf.train.Saver(tf.trainable_variables(), max_to_keep=3)
 
         # Build the summary operation based on the TF collection of Summaries.
+        # 摘要状态对象
         summary_op = tf.summary.merge_all()
 
         # Start running operations on the Graph.
+        # 开始训练
         gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=args.gpu_memory_fraction)
         sess = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options))        
 
         # Initialize variables
+        # 初始化占位符和一些全局，局部变量
         sess.run(tf.global_variables_initializer(), feed_dict={phase_train_placeholder:True})
         sess.run(tf.local_variables_initializer(), feed_dict={phase_train_placeholder:True})
 
+        # 将摘要，主要是图结构写入log文件，定义一个写入文件的对象
         summary_writer = tf.summary.FileWriter(log_dir, sess.graph)
+        # 协作器对象
         coord = tf.train.Coordinator()
         tf.train.start_queue_runners(coord=coord, sess=sess)
 
@@ -167,17 +184,21 @@ def main(args):
                 saver.restore(sess, os.path.expanduser(args.pretrained_model))
 
             # Training and validation loop
+            # 开始训练和验证的循环
             epoch = 0
             while epoch < args.max_nrof_epochs:
+                # 依靠global step来计算迭代次数
                 step = sess.run(global_step, feed_dict=None)
                 epoch = step // args.epoch_size
                 # Train for one epoch
+                # 直接是训练一个epoch，总的迭代次数 = epoch_size，每一次迭代要用到batch_size的数据
                 train(args, sess, train_set, epoch, image_paths_placeholder, labels_placeholder, labels_batch,
                     batch_size_placeholder, learning_rate_placeholder, phase_train_placeholder, enqueue_op, input_queue, global_step, 
                     embeddings, total_loss, train_op, summary_op, summary_writer, args.learning_rate_schedule_file,
                     args.embedding_size, anchor, positive, negative, triplet_loss)
 
                 # Save variables and the metagraph if it doesn't exist already
+                # 每隔一个epoch保存一次快照，meta 和 variables
                 save_variables_and_metagraph(sess, saver, summary_writer, model_dir, subdir, step)
 
                 # Evaluate on LFW
@@ -202,6 +223,7 @@ def train(args, sess, dataset, epoch, image_paths_placeholder, labels_placeholde
         lr = facenet.get_learning_rate_from_file(learning_rate_schedule_file, epoch)
     while batch_number < args.epoch_size:
         # Sample people randomly from the dataset
+        # 随机抽取一部分数据集中的样例
         image_paths, num_per_class = sample_people(dataset, args.people_per_batch, args.images_per_person)
         
         print('Running forward pass on sampled images: ', end='')
@@ -220,6 +242,7 @@ def train(args, sess, dataset, epoch, image_paths_placeholder, labels_placeholde
         print('%.3f' % (time.time()-start_time))
 
         # Select triplets based on the embeddings
+        # 选择合适的三元组（论文里面有选择规则）
         print('Selecting suitable triplets for training')
         triplets, nrof_random_negs, nrof_triplets = select_triplets(emb_array, num_per_class, 
             image_paths, args.people_per_batch, args.alpha)
@@ -228,6 +251,7 @@ def train(args, sess, dataset, epoch, image_paths_placeholder, labels_placeholde
             (nrof_random_negs, nrof_triplets, selection_time))
 
         # Perform training on the selected triplets
+        # 开始训练三元组
         nrof_batches = int(np.ceil(nrof_triplets*3/args.batch_size))
         triplet_paths = list(itertools.chain(*triplets))
         labels_array = np.reshape(np.arange(len(triplet_paths)),(-1,3))
@@ -406,6 +430,7 @@ def get_learning_rate_from_file(filename, epoch):
                     return learning_rate
     
 
+# 参数解析
 def parse_arguments(argv):
     parser = argparse.ArgumentParser()
     
